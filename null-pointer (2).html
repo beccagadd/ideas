@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Null Pointer — an argument, not a product</title>
+  <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'><g transform='rotate(12 13 13)'><path d='M20.5 6.5 C23 4.5 25 5 25.5 5.5 C24.5 7.5 23 8.2 21.5 8.5 C23 9.5 23.4 11 23.2 12 C20.8 11.8 19.4 10.6 18.8 9.2 Z' fill='%237fae84' stroke='%235e8f64' stroke-width='0.9'/><path d='M13 5.6 C6.8 5.6 2.4 10 2.6 14.6 C2.8 19.6 8 24 13 24 C18 24 22.4 19 22.4 14 C22.4 9.4 18.4 5.6 13 5.6 Z' fill='%23e6332f' stroke='%23b2211e' stroke-width='1.2'/><g fill='%23fdf3c9'><circle cx='8.4' cy='11.4' r='1.1'/><circle cx='13.4' cy='9.8' r='1.1'/><circle cx='17.8' cy='12.2' r='1.1'/><circle cx='6.9' cy='16.2' r='1.1'/><circle cx='11.6' cy='14.6' r='1.1'/><circle cx='16.2' cy='16.8' r='1.1'/><circle cx='10.2' cy='19.6' r='1.1'/><circle cx='14.6' cy='20.6' r='1.1'/></g></g></svg>">
+  <meta name="description" content="Simulation theory is a cop out. Turtles with extra steps. An argument about what computation actually resolves.">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Null Pointer">
+  <meta property="og:description" content="Simulation theory is a cop out. Turtles with extra steps.">
+  <meta property="og:url" content="https://beccagadd.github.io/ideas/null-pointer.html">
+  <meta property="og:image" content="https://beccagadd.github.io/ideas/og-card-null-pointer.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Null Pointer">
+  <meta name="twitter:description" content="Simulation theory is a cop out. Turtles with extra steps.">
+  <meta name="twitter:image" content="https://beccagadd.github.io/ideas/og-card-null-pointer.png">
+<style>
+  :root{
+    --bg:#030a06;
+    --panel:#07160d;
+    --blue:#3dff7e;
+    --blue-dim:#14713f;
+    --blue-glow:rgba(61,255,126,.4);
+    --text:#c8ecd2;
+    --muted:#6fa383;
+    --err:#ff5c55;
+    --keep:#9fdcb4;
+    --mono:"SF Mono","Cascadia Code","Fira Code","Courier New",monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{
+    font-family:var(--mono);
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+
+  /* ---------- green grid room ---------- */
+  .gridfloor, .gridceil{
+    position:fixed;left:-25vw;width:150vw;height:60vh;z-index:0;pointer-events:none;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(61,255,126,.28) 0 1px, transparent 1px 44px),
+      repeating-linear-gradient(90deg, rgba(61,255,126,.28) 0 1px, transparent 1px 44px);
+  }
+  .gridfloor{
+    bottom:-18vh;
+    transform:perspective(520px) rotateX(62deg);
+    transform-origin:top center;
+    -webkit-mask-image:linear-gradient(180deg, transparent, #000 30%);
+    mask-image:linear-gradient(180deg, transparent, #000 30%);
+  }
+  .gridceil{
+    top:-18vh;
+    transform:perspective(520px) rotateX(-62deg);
+    transform-origin:bottom center;
+    opacity:.5;
+    -webkit-mask-image:linear-gradient(0deg, transparent, #000 30%);
+    mask-image:linear-gradient(0deg, transparent, #000 30%);
+  }
+  @media (prefers-reduced-motion: reduce){
+    .gridfloor,.gridceil{display:block;} /* static grid is fine without motion */
+  }
+  #rain{
+    position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;
+  }
+  .wrap{max-width:820px;margin:0 auto;padding:0 24px;position:relative;z-index:1;}
+
+  /* ---------- header ---------- */
+  header{
+    border-bottom:1px solid var(--blue-dim);
+    padding:30px 0 24px;
+    background:linear-gradient(180deg, rgba(7,22,13,.9), rgba(3,10,6,.6));
+  }
+  .sysbar{
+    font-size:12px;letter-spacing:.18em;color:var(--muted);
+    text-transform:uppercase;
+  }
+  .sysbar .addr{color:var(--blue);font-weight:700;}
+  h1{
+    font-size:clamp(38px,8vw,72px);
+    font-weight:700;letter-spacing:-.01em;line-height:1;
+    margin-top:16px;color:#ecffef;
+    text-shadow:0 0 18px var(--blue-glow);
+  }
+  h1 .star{color:var(--blue);}
+  .sub{margin-top:12px;font-size:15px;color:var(--muted);max-width:56ch;}
+
+  /* ---------- node map ---------- */
+  .mapbox{padding:26px 0 8px;}
+  .mapbox .hint{
+    font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:10px;
+  }
+  .hint b{color:var(--blue);}
+  svg.map{width:100%;height:auto;display:block;}
+  .edge{
+    stroke:var(--blue-dim);stroke-width:.45;stroke-dasharray:1.6 1.4;
+    opacity:.8;
+  }
+  .node{cursor:pointer;}
+
+  .node circle{
+    fill:var(--panel);stroke:var(--blue);stroke-width:.7;
+    transition:fill .15s ease;
+  }
+  @keyframes nodepulse{
+    0%,100%{stroke-width:.7;}
+    50%{stroke-width:1.15;}
+  }
+  .node:not(.visited) circle{animation:nodepulse 2.6s ease-in-out infinite;}
+  @media (prefers-reduced-motion: reduce){
+    .node:not(.visited) circle{animation:none;}
+  }
+  .node text{
+    font-family:var(--mono);fill:var(--blue);
+    text-anchor:middle;
+  }
+  .node .nid{font-size:3.2px;font-weight:700;}
+  .node .nname{font-size:2.6px;fill:var(--muted);}
+  .node:hover circle{fill:#0d2e19;}
+  .node.active circle{
+    fill:var(--blue);
+  }
+  .node.active .nid{fill:#03140a;}
+  .node.active .nname{fill:#03140a;}
+  .node.visited:not(.active) circle{fill:#134a2a;}
+  .node:focus{outline:none;}
+  .node:focus circle{stroke-width:1.1;}
+  #progress{
+    font-size:12px;letter-spacing:.14em;color:var(--muted);
+    text-transform:uppercase;margin:6px 0 0;
+  }
+  #progress b{color:var(--blue);}
+  #progress .done{color:var(--keep);}
+
+  /* ---------- content panel ---------- */
+  .panel{
+    border:1px solid var(--blue-dim);
+    background:rgba(7,22,13,.82);
+    border-radius:8px;
+    padding:30px 28px 26px;
+    margin:20px 0 50px;
+    min-height:340px;
+    box-shadow:0 0 30px rgba(20,113,63,.18);
+  }
+  section.deref{display:none;}
+  section.deref.show{display:block;animation:decode .25s ease;}
+  @keyframes decode{
+    from{opacity:0;transform:translateY(6px);}
+    to{opacity:1;transform:none;}
+  }
+  .addrname{
+    font-size:12px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--blue);font-weight:700;margin-bottom:12px;
+  }
+  h2{
+    font-family:var(--mono);
+    font-size:clamp(22px,4.4vw,32px);font-weight:700;
+    line-height:1.15;margin-bottom:16px;color:#ecffef;
+  }
+  p{margin-bottom:14px;max-width:64ch;font-size:15px;}
+  p.big{font-size:16.5px;color:#dcf8e2;}
+  i{color:#ecffef;font-style:italic;}
+  b{color:#ecffef;}
+
+  .pull{
+    font-size:clamp(18px,3.4vw,24px);font-weight:700;
+    line-height:1.3;border-left:4px solid var(--blue);
+    padding:6px 0 6px 18px;margin:24px 0 8px;max-width:30ch;
+    color:#ecffef;text-shadow:0 0 14px var(--blue-glow);
+  }
+
+  /* ---------- comparison board ---------- */
+  .board{
+    border-top:1px solid var(--blue);
+    border-bottom:1px solid var(--blue);
+    margin:20px 0;
+  }
+  .board .row{
+    display:grid;grid-template-columns:1fr 1fr;gap:16px;
+    padding:11px 0;border-bottom:1px dashed var(--blue-dim);
+    font-size:14px;
+  }
+  .board .row:last-child{border-bottom:none;}
+  .board .row.head{
+    font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--muted);font-weight:700;
+  }
+  .board .s .q{color:var(--err);font-weight:700;}
+
+  /* ---------- terminal ---------- */
+  .term{
+    background:#010703;border:1px solid var(--blue-dim);border-radius:6px;
+    padding:18px 20px;margin:20px 0;
+    font-size:13.5px;line-height:1.8;
+    overflow-x:auto;
+  }
+  .term .p{color:var(--blue);}
+  .term .n{color:var(--err);font-weight:700;}
+  .term .c{color:var(--muted);}
+
+  /* ---------- regress widget ---------- */
+  .regress{
+    border:1px dashed var(--blue-dim);border-radius:8px;
+    padding:20px;margin:20px 0;
+  }
+  .regress h3{
+    font-size:11px;letter-spacing:.2em;text-transform:uppercase;
+    margin-bottom:14px;color:var(--muted);
+  }
+  .regress button{
+    font-family:var(--mono);font-size:14px;font-weight:700;
+    background:transparent;color:var(--blue);
+    border:1px solid var(--blue);border-radius:6px;
+    padding:11px 16px;cursor:pointer;
+    transition:background .15s ease, color .15s ease;
+  }
+  .regress button:hover:not(:disabled){background:var(--blue);color:#03140a;}
+  .regress button:disabled{border-color:var(--err);color:var(--err);cursor:default;}
+  #stack{margin-top:14px;font-size:13px;line-height:1.9;}
+  #stack .frame{color:var(--muted);}
+  #stack .crash{color:var(--err);font-weight:700;white-space:pre-wrap;}
+
+  footer{
+    border-top:1px solid var(--blue-dim);
+    padding:30px 0 60px;
+  }
+  footer p{color:var(--muted);font-size:13.5px;max-width:60ch;}
+  footer a{color:var(--blue);text-decoration:none;font-weight:700;}
+
+  @media (max-width:560px){
+    .board .row{grid-template-columns:1fr;gap:4px;}
+    .board .row .g::before{content:"GOD \2014 ";font-size:10px;letter-spacing:.1em;color:var(--muted);font-weight:700;}
+    .board .row .s::before{content:"SIM \2014 ";font-size:10px;letter-spacing:.1em;color:var(--muted);font-weight:700;}
+    .board .row.head{display:none;}
+    .panel{padding:24px 18px;}
+  }
+  @media (prefers-reduced-motion: reduce){
+  
+  /* ---------- green grid room ---------- */
+  .gridfloor, .gridceil{
+    position:fixed;left:-25vw;width:150vw;height:60vh;z-index:0;pointer-events:none;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(61,255,126,.28) 0 1px, transparent 1px 44px),
+      repeating-linear-gradient(90deg, rgba(61,255,126,.28) 0 1px, transparent 1px 44px);
+  }
+  .gridfloor{
+    bottom:-18vh;
+    transform:perspective(520px) rotateX(62deg);
+    transform-origin:top center;
+    -webkit-mask-image:linear-gradient(180deg, transparent, #000 30%);
+    mask-image:linear-gradient(180deg, transparent, #000 30%);
+  }
+  .gridceil{
+    top:-18vh;
+    transform:perspective(520px) rotateX(-62deg);
+    transform-origin:bottom center;
+    opacity:.5;
+    -webkit-mask-image:linear-gradient(0deg, transparent, #000 30%);
+    mask-image:linear-gradient(0deg, transparent, #000 30%);
+  }
+  @media (prefers-reduced-motion: reduce){
+    .gridfloor,.gridceil{display:block;} /* static grid is fine without motion */
+  }
+  #rain{display:none;}
+    section.deref.show{animation:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="gridceil" aria-hidden="true"></div>
+<div class="gridfloor" aria-hidden="true"></div>
+<canvas id="rain" aria-hidden="true"></canvas>
+
+<header>
+  <div class="wrap">
+    <div class="sysbar"><span class="addr">0x00</span> ONE CLAIM · SIX NODES · TRAVERSE IN ANY ORDER</div>
+    <h1><span class="star">*</span>Null Pointer</h1>
+    <p class="sub">An argument about simulation theory, and what computation actually resolves.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="mapbox">
+    <div class="hint">&gt; select a node to dereference it_</div>
+    <svg class="map" viewBox="0 0 100 62" xmlns="http://www.w3.org/2000/svg" role="navigation" aria-label="Argument node map">
+      <defs>
+        <pattern id="gp" width="10" height="10" patternUnits="userSpaceOnUse">
+          <path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(61,255,126,.22)" stroke-width="0.35"/>
+        </pattern>
+      </defs>
+      <rect x="0" y="0" width="100" height="62" fill="url(#gp)" stroke="rgba(61,255,126,.35)" stroke-width="0.5"/>
+      <line class="edge" x1="10" y1="20" x2="40" y2="10"/>
+      <line class="edge" x1="10" y1="20" x2="30" y2="50"/>
+      <line class="edge" x1="40" y1="10" x2="70" y2="10"/>
+      <line class="edge" x1="40" y1="10" x2="30" y2="50"/>
+      <line class="edge" x1="70" y1="10" x2="60" y2="40"/>
+      <line class="edge" x1="30" y1="50" x2="60" y2="40"/>
+      <line class="edge" x1="60" y1="40" x2="90" y2="50"/>
+      <line class="edge" x1="70" y1="10" x2="90" y2="50"/>
+
+      <g class="node" data-target="claim" tabindex="0" role="button" aria-label="Node 0x01 The Claim">
+        <circle cx="10" cy="20" r="7"/>
+        <text class="nid" x="10" y="19">0x01</text>
+        <text class="nname" x="10" y="23">claim</text>
+      </g>
+      <g class="node" data-target="regress" tabindex="0" role="button" aria-label="Node 0x02 The Regress">
+        <circle cx="40" cy="10" r="7"/>
+        <text class="nid" x="40" y="9">0x02</text>
+        <text class="nname" x="40" y="13">regress</text>
+      </g>
+      <g class="node" data-target="rebrand" tabindex="0" role="button" aria-label="Node 0x03 The Rebrand">
+        <circle cx="70" cy="10" r="7"/>
+        <text class="nid" x="70" y="9">0x03</text>
+        <text class="nname" x="70" y="13">rebrand</text>
+      </g>
+      <g class="node" data-target="null" tabindex="0" role="button" aria-label="Node 0x04 The Dereference">
+        <circle cx="30" cy="50" r="7"/>
+        <text class="nid" x="30" y="49">0x04</text>
+        <text class="nname" x="30" y="53">deref</text>
+      </g>
+      <g class="node" data-target="question" tabindex="0" role="button" aria-label="Node 0x05 The Real Question">
+        <circle cx="60" cy="40" r="7"/>
+        <text class="nid" x="60" y="39">0x05</text>
+        <text class="nname" x="60" y="43">question</text>
+      </g>
+      <g class="node" data-target="salvage" tabindex="0" role="button" aria-label="Node 0x06 The Salvage">
+        <circle cx="90" cy="50" r="7"/>
+        <text class="nid" x="90" y="49">0x06</text>
+        <text class="nname" x="90" y="53">salvage</text>
+      </g>
+    </svg>
+    <p id="progress"><b>0/6</b> nodes dereferenced</p>
+  </div>
+
+  <div class="panel">
+
+    <section class="deref show" id="claim">
+      <div class="addrname">0x01 · The Claim</div>
+      <h2>"We live in a simulation."</h2>
+      <p class="big">It sounds like an answer. It has the shape of one — a cause, a creator, a reason the universe runs on math. Tech billionaires say it. Podcasts say it. A guy on a dating app says it.</p>
+      <p>Here's the problem: whatever we're experiencing is real to us, and calling it a simulation achieves nothing. Nothing about your life, physics, or the hard questions changes. The word "simulation" does no work. It's a label wearing an explanation's clothes.</p>
+      <div class="pull">An answer-shaped nothing.</div>
+    </section>
+
+    <section class="deref" id="regress">
+      <div class="addrname">0x02 · The Regress</div>
+      <h2>Ok. Who created the simulation?</h2>
+      <p class="big">Someone in base reality. Ok — what explains <i>their</i> reality? Another simulation? Then who created that one?</p>
+      <p>The theory doesn't answer the question. It relocates it — one level up, out of reach, forever. That's not an explanation. That's a forwarding address.</p>
+
+      <div class="regress">
+        <h3>Try it yourself</h3>
+        <button id="ask">Ok. Who created the simulation?</button>
+        <div id="stack" aria-live="polite"></div>
+      </div>
+
+      <div class="pull">Turtles with extra steps.</div>
+    </section>
+
+    <section class="deref" id="rebrand">
+      <div class="addrname">0x03 · The Rebrand</div>
+      <h2>It's god with a GPU.</h2>
+      <p class="big">Swap the vocabulary and nothing changes:</p>
+      <div class="board">
+        <div class="row head"><span>Religion</span><span>Simulation theory</span></div>
+        <div class="row"><span class="g">God made us.</span><span class="s">A simulator made us.</span></div>
+        <div class="row"><span class="g">God exists outside our reality.</span><span class="s">The simulator exists outside our reality.</span></div>
+        <div class="row"><span class="g">God works in mysterious ways.</span><span class="s">The simulator's methods are unknowable.</span></div>
+        <div class="row"><span class="g">God made us to prove ourselves.</span><span class="s">The simulation made us to... <span class="q">?</span></span></div>
+      </div>
+      <p>Same theology. New casing. And notice the last row: religion at least assigns its creator a motive. Simulation theory can't even do that. It kept the god and deleted the purpose — which makes it the <i>less</i> complete theory of the two. At least faith has the honesty to call itself faith.</p>
+    </section>
+
+    <section class="deref" id="null">
+      <div class="addrname">0x04 · The Dereference</div>
+      <h2>Follow the claim to its address.</h2>
+      <p class="big">In code, a pointer is an address — it says "the meaning lives over there." A null pointer has the shape of a reference and points at nothing. Follow it and the program crashes.</p>
+      <p>"We live in a simulation" is a null pointer. It has the shape of an explanation, and when you actually dereference it — who runs it, why, what for — there's nothing at the address.</p>
+      <div class="term">
+        <div><span class="p">&gt;</span> dereference("we live in a simulation")</div>
+        <div><span class="n">NULL</span></div>
+        <div><span class="p">&gt;</span> dereference(purpose)</div>
+        <div><span class="n">NULL</span></div>
+        <div><span class="c">Segmentation fault (explanation not found)</span></div>
+      </div>
+    </section>
+
+    <section class="deref" id="question">
+      <div class="addrname">0x05 · The Real Question</div>
+      <h2>What does the machine resolve?</h2>
+      <p class="big">There's one real observation underneath all of it: the universe computes. States transition, lawfully, everywhere, all the time. Fine. But then ask the question everyone skips — what <i>is</i> computation, structurally?</p>
+      <p>Computation is thermodynamic activity: high-energy states resolving into low-energy states. Tension resolving into structure. Every computation resolves <i>something</i> — that's what makes it computation and not noise.</p>
+      <p>So if reality is a computation: what does it resolve? What does the "simulation" achieve, structurally? Simulation theorists skip this part entirely, because they don't actually care about the computation — they just want to say we're in a machine. Duh, cool, machine. That's a vibe, not a theory.</p>
+      <div class="pull">Stop coping with vibes. Ask what the machine resolves.</div>
+    </section>
+
+    <section class="deref" id="salvage">
+      <div class="addrname">0x06 · The Salvage</div>
+      <h2>Keep the pointer. Free the turtles.</h2>
+      <p class="big">One component of simulation theory is worth stripping for parts before you junk the rest: <b>reference</b>.</p>
+      <p>A pointer is locally real — actual bits in actual memory — and its meaning lives outside its own address space. That structure is genuinely interesting, and here's the thing: it doesn't need an operator. Nothing about "this points beyond itself" requires anyone at a keyboard.</p>
+      <p>Our reality can be exactly that: locally real, and pointing outward — embedded in something larger and more fundamental — without a simulator, an overlord, or a rendering farm. Reference without a referee. That's the part that survives. Everything else was turtles.</p>
+      <div class="pull">Locally real. Semantically outward. Nobody at the keyboard.</div>
+    </section>
+
+  </div>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <p>This page argues one thing and then stops. If the word "simulation" does less for you now, it worked.</p>
+    <p style="margin-top:18px;"><a href="index.html">&larr; back to the index</a></p>
+  </div>
+</footer>
+
+<script>
+  // ---------- node navigation ----------
+  (function(){
+    const nodes = document.querySelectorAll('.node');
+    const sections = document.querySelectorAll('section.deref');
+    const progress = document.getElementById('progress');
+    const visited = new Set(['claim']);
+    document.querySelector('.node[data-target="claim"]').classList.add('active','visited');
+    update();
+
+    function activate(target){
+      sections.forEach(s => s.classList.toggle('show', s.id === target));
+      nodes.forEach(n => {
+        n.classList.toggle('active', n.dataset.target === target);
+        if(n.dataset.target === target) n.classList.add('visited');
+      });
+      visited.add(target);
+      update();
+    }
+    function update(){
+      if(visited.size >= 6){
+        progress.innerHTML = '<span class="done">6/6 dereferenced. The pointer still resolves to NULL.</span>';
+      } else {
+        progress.innerHTML = '<b>' + visited.size + '/6</b> nodes dereferenced';
+      }
+    }
+    nodes.forEach(n => {
+      n.addEventListener('click', () => activate(n.dataset.target));
+      n.addEventListener('keydown', e => {
+        if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); activate(n.dataset.target); }
+      });
+    });
+  })();
+
+  // ---------- regress widget ----------
+  (function(){
+    const btn = document.getElementById('ask');
+    const stack = document.getElementById('stack');
+    let depth = 0;
+    const MAX = 7;
+    btn.addEventListener('click', function(){
+      depth++;
+      if(depth < MAX){
+        const f = document.createElement('div');
+        f.className = 'frame';
+        f.style.paddingLeft = (depth*14) + 'px';
+        f.textContent = '\u2192 "And who created them?"';
+        stack.appendChild(f);
+        btn.textContent = 'Ok. And who created them?';
+      } else {
+        const c = document.createElement('div');
+        c.className = 'crash';
+        c.textContent = 'RecursionError: turtles all the way down.';
+        stack.appendChild(c);
+        btn.disabled = true;
+        btn.textContent = 'Stack overflow.';
+      }
+    });
+  })();
+
+  // ---------- matrix rain ----------
+  (function(){
+    if(matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const cv = document.getElementById('rain');
+    const ctx = cv.getContext('2d');
+    const CHARS = '01*&\u2192NULLptr{};<>#=';
+    let cols, drops, fs;
+    function size(){
+      cv.width = innerWidth; cv.height = innerHeight;
+      fs = 14;
+      cols = Math.floor(cv.width / fs);
+      drops = Array(cols).fill(0).map(()=>Math.random()*-50);
+    }
+    size();
+    addEventListener('resize', size);
+    let last = 0;
+    function draw(t){
+      if(t - last > 66){
+        last = t;
+        ctx.fillStyle = 'rgba(3,10,6,0.18)';
+        ctx.fillRect(0,0,cv.width,cv.height);
+        ctx.font = fs + 'px monospace';
+        for(let i=0;i<cols;i++){
+          const ch = CHARS[Math.floor(Math.random()*CHARS.length)];
+          const y = drops[i]*fs;
+          ctx.fillStyle = Math.random() > .975 ? '#b4ffce' : 'rgba(61,255,126,0.30)';
+          ctx.fillText(ch, i*fs, y);
+          if(y > cv.height && Math.random() > .976) drops[i] = 0;
+          drops[i]++;
+        }
+      }
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+  })();
+</script>
+
+</body>
+</html>
